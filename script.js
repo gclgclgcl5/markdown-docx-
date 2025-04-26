@@ -2,20 +2,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // 获取DOM元素
     const inputText = document.getElementById('input-text');
     const outputText = document.getElementById('output-text');
-    const inputFormat = document.getElementById('input-format');
-    const outputFormat = document.getElementById('output-format');
+    const detectedFormatBadge = document.getElementById('detected-format');
+    const outputFormatBadge = document.getElementById('output-format');
     const convertBtn = document.getElementById('convert-btn');
-    const swapBtn = document.getElementById('swap-btn');
     const copyBtn = document.getElementById('copy-btn');
     const downloadBtn = document.getElementById('download-btn');
+    const fileImport = document.getElementById('file-import');
+
+    // 格式标识
+    const FORMAT_MARKDOWN = 'markdown';
+    const FORMAT_DOC = 'doc';
+
+    // 当前检测到的输入格式
+    let detectedInputFormat = null;
+    // 当前的输出格式
+    let currentOutputFormat = null;
+    // 用于存储生成的docx文档对象
+    let generatedDocx = null;
 
     // 检查docx库是否正确加载
     if (typeof docx === 'undefined') {
         console.error('错误：docx.js库未正确加载！');
     } else {
         console.log('docx.js库已成功加载，版本:', docx.Document ? 'v7.x' : '其他版本');
-        // 输出docx对象的所有顶级属性，帮助调试
-        console.log('docx库包含的对象:', Object.keys(docx));
     }
 
     // 初始化Showdown转换器（用于Markdown<->HTML转换）
@@ -26,48 +35,14 @@ document.addEventListener('DOMContentLoaded', () => {
         emoji: true
     });
     
-    // 用于存储生成的docx文档对象
-    let generatedDocx = null;
+    // 监听输入框内容变化，动态检测格式
+    inputText.addEventListener('input', debounce(detectInputFormat, 300));
     
-    // 当点击转换按钮时
-    convertBtn.addEventListener('click', async () => {
-        const input = inputText.value.trim();
-        
-        if (!input) {
-            alert('请先输入内容');
-            return;
-        }
-        
-        try {
-            // 基于选择的格式进行转换
-            if (inputFormat.value === 'markdown' && outputFormat.value === 'doc') {
-                // Markdown -> DOC (DOCX)
-                await markdownToDoc(input);
-            } else if (inputFormat.value === 'doc' && outputFormat.value === 'markdown') {
-                // DOC -> Markdown
-                await docToMarkdown(input);
-            } else {
-                // 相同格式，无需转换
-                outputText.value = input;
-                generatedDocx = null;
-            }
-        } catch (error) {
-            console.error('转换出错:', error);
-            alert('转换过程中出现错误：' + error.message);
-        }
-    });
+    // 文件导入处理
+    fileImport.addEventListener('change', handleFileImport);
     
-    // 切换输入和输出格式
-    swapBtn.addEventListener('click', () => {
-        // 交换两个选择框的值
-        const tempValue = inputFormat.value;
-        inputFormat.value = outputFormat.value;
-        outputFormat.value = tempValue;
-        
-        // 清空输出区域
-        outputText.value = '';
-        generatedDocx = null;
-    });
+    // 当点击转换按钮时执行智能转换
+    convertBtn.addEventListener('click', smartConvert);
     
     // 复制结果按钮
     copyBtn.addEventListener('click', () => {
@@ -94,11 +69,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        if (outputFormat.value === 'markdown') {
+        if (currentOutputFormat === FORMAT_MARKDOWN) {
             // 下载为Markdown文件
             const blob = new Blob([outputText.value], { type: 'text/markdown' });
             saveAs(blob, 'converted.md');
-        } else if (outputFormat.value === 'doc' && generatedDocx) {
+        } else if (currentOutputFormat === FORMAT_DOC && generatedDocx) {
             try {
                 // 下载为DOCX文件 - 使用docx.Packer打包
                 saveDocxFile();
@@ -115,6 +90,167 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 处理文件导入
+    function handleFileImport(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const fileName = file.name.toLowerCase();
+        
+        // 根据文件扩展名自动检测格式
+        if (fileName.endsWith('.md')) {
+            // 导入Markdown文件
+            readMarkdownFile(file);
+        } else if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) {
+            // 导入DOC/DOCX文件
+            readDocxFile(file);
+        } else {
+            alert('不支持的文件格式。请上传 .md、.doc 或 .docx 文件。');
+        }
+        
+        // 重置文件输入框，允许导入同一文件
+        fileImport.value = '';
+    }
+    
+    // 读取Markdown文件
+    function readMarkdownFile(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // 读取文件内容并填充到输入区域
+            inputText.value = e.target.result;
+            // 检测并显示格式
+            detectInputFormat();
+        };
+        reader.onerror = function() {
+            alert('读取文件失败');
+        };
+        reader.readAsText(file);
+    }
+    
+    // 读取DOC/DOCX文件
+    function readDocxFile(file) {
+        // 显示加载提示
+        inputText.value = '正在读取文件，请稍候...';
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const arrayBuffer = e.target.result;
+            
+            // 使用mammoth.js将DOCX转换为HTML
+            mammoth.convertToHtml({arrayBuffer})
+                .then(result => {
+                    // 保存完整的HTML内容（用于转换）
+                    const html = result.value;
+                    
+                    // 在输入区域存储文件名和完整HTML
+                    inputText.value = `<!-- 已导入文档：${file.name} -->\n${html}`;
+                    
+                    // 检测并显示格式
+                    detectInputFormat();
+                    
+                    // 如果有警告，显示在控制台
+                    if (result.messages.length > 0) {
+                        console.warn('文档转换警告:', result.messages);
+                    }
+                })
+                .catch(error => {
+                    console.error('文档读取失败:', error);
+                    inputText.value = '无法读取文档: ' + error.message;
+                });
+        };
+        reader.onerror = function() {
+            inputText.value = '读取文件失败';
+        };
+        reader.readAsArrayBuffer(file);
+    }
+    
+    // 智能转换函数 - 自动检测输入格式并转换为相应的输出格式
+    async function smartConvert() {
+        const input = inputText.value.trim();
+        
+        if (!input) {
+            alert('请先输入内容或导入文件');
+            return;
+        }
+        
+        try {
+            // 重新检测输入格式
+            detectInputFormat();
+            
+            if (!detectedInputFormat) {
+                alert('无法确定输入内容的格式，请检查内容或尝试重新导入文件。');
+                return;
+            }
+            
+            // 基于检测到的输入格式决定输出格式
+            if (detectedInputFormat === FORMAT_MARKDOWN) {
+                // Markdown -> DOC
+                currentOutputFormat = FORMAT_DOC;
+                outputFormatBadge.textContent = 'DOC格式';
+                outputFormatBadge.className = 'format-badge format-doc';
+                await markdownToDoc(input);
+            } else if (detectedInputFormat === FORMAT_DOC) {
+                // DOC -> Markdown
+                currentOutputFormat = FORMAT_MARKDOWN;
+                outputFormatBadge.textContent = 'Markdown格式';
+                outputFormatBadge.className = 'format-badge format-markdown';
+                await docToMarkdown(input);
+            }
+        } catch (error) {
+            console.error('转换出错:', error);
+            alert('转换过程中出现错误：' + error.message);
+        }
+    }
+    
+    // 检测输入格式
+    function detectInputFormat() {
+        const input = inputText.value.trim();
+        
+        if (!input) {
+            detectedInputFormat = null;
+            detectedFormatBadge.textContent = '';
+            return;
+        }
+        
+        // 检查是否为HTML (DOC导入后的格式)
+        if (input.startsWith('<') && (input.includes('</') || input.includes('/>'))) {
+            detectedInputFormat = FORMAT_DOC;
+            detectedFormatBadge.textContent = '已检测为DOC格式';
+            detectedFormatBadge.className = 'format-badge format-doc';
+            return;
+        }
+        
+        // 检查是否为Markdown
+        // Markdown常见特征: 标题(#), 列表(- 或 1.)，代码块(```)等
+        const markdownFeatures = [
+            /^#+\s+.+$/m,  // 标题
+            /^[*\-+]\s+.+$/m,  // 无序列表
+            /^\d+\.\s+.+$/m,  // 有序列表
+            /^>\s+.+$/m,  // 引用
+            /^`{3}.+`{3}/ms,  // 代码块
+            /\[.+\]\(.+\)/m,  // 链接
+            /\*\*.+\*\*/m,  // 粗体
+            /\*.+\*/m,  // 斜体
+            /^(?:\|[^|]+)+\|$/m,  // 表格
+        ];
+        
+        // 如果匹配多个Markdown特征，则视为Markdown
+        const markdownScore = markdownFeatures.reduce((count, pattern) => {
+            return pattern.test(input) ? count + 1 : count;
+        }, 0);
+        
+        if (markdownScore >= 1) {
+            detectedInputFormat = FORMAT_MARKDOWN;
+            detectedFormatBadge.textContent = '已检测为Markdown格式';
+            detectedFormatBadge.className = 'format-badge format-markdown';
+        } else {
+            // 默认作为DOC格式
+            detectedInputFormat = FORMAT_DOC;
+            detectedFormatBadge.textContent = '已检测为DOC格式';
+            detectedFormatBadge.className = 'format-badge format-doc';
+        }
+    }
+    
     // 保存DOCX文件
     function saveDocxFile() {
         if (!generatedDocx) {
@@ -131,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Markdown 转 DOC (真正的DOCX文件)
+    // Markdown 转 DOC
     async function markdownToDoc(markdown) {
         try {
             // 使用Showdown将Markdown转换为HTML (用于预览)
@@ -153,6 +289,198 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Markdown转Doc时出错:', error);
             throw new Error('Markdown转换到DOC格式失败');
         }
+    }
+    
+    // DOC 转 Markdown
+    async function docToMarkdown(docContent) {
+        try {
+            // 移除可能存在的注释信息（如导入文件名）
+            let content = docContent.replace(/<!--.*?-->/s, '').trim();
+            
+            // 判断输入是否为HTML格式
+            const isHtml = content.startsWith('<') && content.includes('</');
+            
+            let htmlContent;
+            
+            if (isHtml) {
+                // 如果已经是HTML，直接使用
+                htmlContent = content;
+            } else {
+                // 提示用户上传.docx文件
+                outputText.value = '请注意：直接转换DOC文本内容不被支持。请使用左侧输入区域上方的"导入文件"按钮上传.doc或.docx文件';
+                return;
+            }
+            
+            // 从HTML提取body内容
+            const bodyContent = extractBodyContent(htmlContent);
+            
+            // 使用自定义函数将HTML转换为Markdown
+            const markdown = htmlToMarkdown(bodyContent);
+            
+            outputText.value = markdown;
+            generatedDocx = null;
+        } catch (error) {
+            console.error('Doc转Markdown时出错:', error);
+            throw new Error('DOC转换到Markdown格式失败');
+        }
+    }
+    
+    // 从HTML中提取body内容
+    function extractBodyContent(html) {
+        // 如果有body标签，提取其中的内容
+        const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+        if (bodyMatch) {
+            return bodyMatch[1].trim();
+        }
+        
+        // 如果没有body标签但有HTML文档结构，尝试提取内容部分
+        const htmlMatch = /<html[^>]*>([\s\S]*?)<\/html>/i.exec(html);
+        if (htmlMatch) {
+            // 排除head部分
+            const content = htmlMatch[1].replace(/<head[\s\S]*?<\/head>/i, '');
+            return content.trim();
+        }
+        
+        // 如果没有HTML和BODY标签，可能是部分HTML片段，直接返回
+        return html;
+    }
+    
+    // 简单的HTML转Markdown实现
+    function htmlToMarkdown(html) {
+        let markdown = html;
+        
+        // 替换标题
+        markdown = markdown.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '# $1\n\n');
+        markdown = markdown.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '## $1\n\n');
+        markdown = markdown.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '### $1\n\n');
+        markdown = markdown.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, '#### $1\n\n');
+        markdown = markdown.replace(/<h5[^>]*>([\s\S]*?)<\/h5>/gi, '##### $1\n\n');
+        markdown = markdown.replace(/<h6[^>]*>([\s\S]*?)<\/h6>/gi, '###### $1\n\n');
+        
+        // 替换段落，确保非贪婪匹配
+        markdown = markdown.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '$1\n\n');
+        
+        // 替换粗体和斜体
+        markdown = markdown.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
+        markdown = markdown.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');
+        markdown = markdown.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*');
+        markdown = markdown.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*');
+        
+        // 替换链接
+        markdown = markdown.replace(/<a href="(.*?)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
+        
+        // 替换图片
+        markdown = markdown.replace(/<img src="(.*?)"[^>]*?(?:alt="(.*?)")?[^>]*>/gi, '![$2]($1)');
+        
+        // 替换列表 - 优化处理嵌套列表
+        markdown = markdown.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (match, content) => {
+            return content.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n');
+        });
+        
+        markdown = markdown.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (match, content) => {
+            let index = 1;
+            return content.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (match, item) => {
+                return `${index++}. ${item}\n`;
+            });
+        });
+        
+        // 替换代码块
+        markdown = markdown.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, '```\n$1\n```\n\n');
+        
+        // 替换内联代码
+        markdown = markdown.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '`$1`');
+        
+        // 替换水平线
+        markdown = markdown.replace(/<hr[^>]*>/gi, '---\n\n');
+        
+        // 替换引用块
+        markdown = markdown.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (match, content) => {
+            // 为引用块内的每一行添加>前缀
+            return content.split('\n').map(line => `> ${line}`).join('\n') + '\n\n';
+        });
+        
+        // 简单替换表格（这是一个基本实现，复杂表格可能需要更多处理）
+        markdown = markdown.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (match, tableContent) => {
+            let result = '';
+            
+            // 处理表头
+            const headerMatch = /<thead[^>]*>([\s\S]*?)<\/thead>/i.exec(tableContent);
+            if (headerMatch) {
+                const headerContent = headerMatch[1];
+                const headerCells = [];
+                
+                // 提取表头单元格
+                let headerCellMatch;
+                const thRegex = /<th[^>]*>([\s\S]*?)<\/th>/gi;
+                while ((headerCellMatch = thRegex.exec(headerContent)) !== null) {
+                    headerCells.push(headerCellMatch[1].trim());
+                }
+                
+                if (headerCells.length > 0) {
+                    // 创建表头行
+                    result += `| ${headerCells.join(' | ')} |\n`;
+                    
+                    // 创建分隔行
+                    result += `| ${headerCells.map(() => '---').join(' | ')} |\n`;
+                }
+            }
+            
+            // 处理表格主体
+            const bodyMatch = /<tbody[^>]*>([\s\S]*?)<\/tbody>/i.exec(tableContent);
+            if (bodyMatch) {
+                const bodyContent = bodyMatch[1];
+                const rows = [];
+                
+                // 提取表格行
+                let rowMatch;
+                const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+                while ((rowMatch = trRegex.exec(bodyContent)) !== null) {
+                    const rowContent = rowMatch[1];
+                    const cells = [];
+                    
+                    // 提取单元格
+                    let cellMatch;
+                    const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+                    while ((cellMatch = tdRegex.exec(rowContent)) !== null) {
+                        cells.push(cellMatch[1].trim());
+                    }
+                    
+                    if (cells.length > 0) {
+                        rows.push(`| ${cells.join(' | ')} |`);
+                    }
+                }
+                
+                if (rows.length > 0) {
+                    result += rows.join('\n') + '\n\n';
+                }
+            }
+            
+            return result;
+        });
+        
+        // 清理HTML标签前，处理一些特殊情况
+        // 处理换行
+        markdown = markdown.replace(/<br\s*\/?>/gi, '\n');
+        markdown = markdown.replace(/&nbsp;/gi, ' ');
+        
+        // 处理div和span等容器标签
+        markdown = markdown.replace(/<div[^>]*>([\s\S]*?)<\/div>/gi, '$1\n');
+        markdown = markdown.replace(/<span[^>]*>([\s\S]*?)<\/span>/gi, '$1');
+        
+        // 清理剩余的HTML标签
+        markdown = markdown.replace(/<[^>]+>/g, '');
+        
+        // 解码HTML实体
+        markdown = markdown.replace(/&lt;/g, '<')
+                          .replace(/&gt;/g, '>')
+                          .replace(/&amp;/g, '&')
+                          .replace(/&quot;/g, '"')
+                          .replace(/&#39;/g, "'");
+        
+        // 修复多余的空行
+        markdown = markdown.replace(/\n{3,}/g, '\n\n');
+        
+        return markdown;
     }
     
     // 使用docx.js创建一个简单的DOCX文档
@@ -415,226 +743,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return result;
     }
     
-    // DOC 转 Markdown
-    async function docToMarkdown(docContent) {
-        try {
-            // 判断输入是否为HTML格式
-            const isHtml = docContent.trim().startsWith('<') && docContent.includes('</');
-            
-            let htmlContent;
-            
-            if (isHtml) {
-                // 如果已经是HTML，直接使用
-                htmlContent = docContent;
-            } else {
-                // 提示用户上传.docx文件
-                outputText.value = '请注意：直接转换DOC文本内容不被支持。请上传.docx文件';
-                setupFileUploader();
-                return;
-            }
-            
-            // 从HTML提取body内容
-            const bodyContent = extractBodyContent(htmlContent);
-            
-            // 使用TurndownService将HTML转换为Markdown
-            // 由于不能直接使用turndown.js库，我们会实现一个简单的HTML到Markdown的转换
-            const markdown = htmlToMarkdown(bodyContent);
-            
-            outputText.value = markdown;
-            generatedDocx = null;
-        } catch (error) {
-            console.error('Doc转Markdown时出错:', error);
-            throw new Error('DOC转换到Markdown格式失败');
-        }
-    }
-    
-    // 从HTML中提取body内容
-    function extractBodyContent(html) {
-        const bodyMatch = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html);
-        return bodyMatch ? bodyMatch[1].trim() : html;
-    }
-    
-    // 简单的HTML转Markdown实现
-    function htmlToMarkdown(html) {
-        let markdown = html;
-        
-        // 替换标题
-        markdown = markdown.replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n');
-        markdown = markdown.replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n');
-        markdown = markdown.replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n\n');
-        markdown = markdown.replace(/<h4[^>]*>(.*?)<\/h4>/gi, '#### $1\n\n');
-        markdown = markdown.replace(/<h5[^>]*>(.*?)<\/h5>/gi, '##### $1\n\n');
-        markdown = markdown.replace(/<h6[^>]*>(.*?)<\/h6>/gi, '###### $1\n\n');
-        
-        // 替换段落
-        markdown = markdown.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n');
-        
-        // 替换粗体和斜体
-        markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**');
-        markdown = markdown.replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**');
-        markdown = markdown.replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*');
-        markdown = markdown.replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*');
-        
-        // 替换链接
-        markdown = markdown.replace(/<a href="(.*?)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)');
-        
-        // 替换图片
-        markdown = markdown.replace(/<img src="(.*?)"[^>]*>/gi, '![]($1)');
-        
-        // 替换列表
-        markdown = markdown.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (match, content) => {
-            return content.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n');
-        });
-        
-        markdown = markdown.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (match, content) => {
-            let index = 1;
-            return content.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (match, item) => {
-                return `${index++}. ${item}\n`;
-            });
-        });
-        
-        // 替换代码块
-        markdown = markdown.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, '```\n$1\n```\n\n');
-        
-        // 替换内联代码
-        markdown = markdown.replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`');
-        
-        // 替换水平线
-        markdown = markdown.replace(/<hr[^>]*>/gi, '---\n\n');
-        
-        // 替换引用块
-        markdown = markdown.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (match, content) => {
-            // 为引用块内的每一行添加>前缀
-            return content.split('\n').map(line => `> ${line}`).join('\n') + '\n\n';
-        });
-        
-        // 简单替换表格（这是一个基本实现，复杂表格可能需要更多处理）
-        markdown = markdown.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (match, tableContent) => {
-            let result = '';
-            
-            // 处理表头
-            const headerMatch = /<thead[^>]*>([\s\S]*?)<\/thead>/i.exec(tableContent);
-            if (headerMatch) {
-                const headerContent = headerMatch[1];
-                const headerCells = [];
-                
-                // 提取表头单元格
-                let headerCellMatch;
-                const thRegex = /<th[^>]*>([\s\S]*?)<\/th>/gi;
-                while ((headerCellMatch = thRegex.exec(headerContent)) !== null) {
-                    headerCells.push(headerCellMatch[1].trim());
-                }
-                
-                if (headerCells.length > 0) {
-                    // 创建表头行
-                    result += `| ${headerCells.join(' | ')} |\n`;
-                    
-                    // 创建分隔行
-                    result += `| ${headerCells.map(() => '---').join(' | ')} |\n`;
-                }
-            }
-            
-            // 处理表格主体
-            const bodyMatch = /<tbody[^>]*>([\s\S]*?)<\/tbody>/i.exec(tableContent);
-            if (bodyMatch) {
-                const bodyContent = bodyMatch[1];
-                const rows = [];
-                
-                // 提取表格行
-                let rowMatch;
-                const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-                while ((rowMatch = trRegex.exec(bodyContent)) !== null) {
-                    const rowContent = rowMatch[1];
-                    const cells = [];
-                    
-                    // 提取单元格
-                    let cellMatch;
-                    const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-                    while ((cellMatch = tdRegex.exec(rowContent)) !== null) {
-                        cells.push(cellMatch[1].trim());
-                    }
-                    
-                    if (cells.length > 0) {
-                        rows.push(`| ${cells.join(' | ')} |`);
-                    }
-                }
-                
-                if (rows.length > 0) {
-                    result += rows.join('\n') + '\n\n';
-                }
-            }
-            
-            return result;
-        });
-        
-        // 清理HTML标签
-        markdown = markdown.replace(/<[^>]+>/g, '');
-        
-        // 解码HTML实体
-        markdown = markdown.replace(/&lt;/g, '<')
-                          .replace(/&gt;/g, '>')
-                          .replace(/&amp;/g, '&')
-                          .replace(/&quot;/g, '"')
-                          .replace(/&#39;/g, "'");
-        
-        // 修复多余的空行
-        markdown = markdown.replace(/\n{3,}/g, '\n\n');
-        
-        return markdown;
-    }
-    
-    // 设置文件上传处理器（用于DOCX文件）
-    function setupFileUploader() {
-        // 检查是否已经存在上传器
-        let uploader = document.getElementById('docx-uploader');
-        if (uploader) {
-            return;
-        }
-        
-        // 创建文件上传元素
-        uploader = document.createElement('div');
-        uploader.id = 'docx-uploader';
-        uploader.style.marginTop = '10px';
-        uploader.innerHTML = `
-            <p>如需转换DOCX文件，请上传:</p>
-            <input type="file" id="docx-file" accept=".docx">
-        `;
-        
-        // 插入到输出区域上方
-        outputText.parentNode.insertBefore(uploader, outputText);
-        
-        // 监听文件上传
-        document.getElementById('docx-file').addEventListener('change', handleDocxUpload);
-    }
-    
-    // 处理DOCX文件上传
-    function handleDocxUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = function(loadEvent) {
-            const arrayBuffer = loadEvent.target.result;
-            
-            // 使用mammoth.js将DOCX转换为HTML
-            mammoth.convertToHtml({arrayBuffer})
-                .then(result => {
-                    const html = result.value;
-                    const markdown = htmlToMarkdown(html);
-                    outputText.value = markdown;
-                    generatedDocx = null;
-                    
-                    // 移除上传器
-                    const uploader = document.getElementById('docx-uploader');
-                    if (uploader) {
-                        uploader.parentNode.removeChild(uploader);
-                    }
-                })
-                .catch(error => {
-                    console.error('DOCX转换失败:', error);
-                    outputText.value = '无法转换DOCX文件: ' + error.message;
-                });
+    // 防抖函数，用于优化输入时的检测
+    function debounce(func, wait) {
+        let timeout;
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
         };
-        reader.readAsArrayBuffer(file);
     }
+    
+    // 初始化时检测一次格式
+    detectInputFormat();
 }); 

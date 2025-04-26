@@ -8,32 +8,28 @@
 </head>
 <body>
     <div class="container">
-        <h1>Markdown与DOC格式互转工具</h1>
+        <h1>Markdown与DOC格式智能互转工具</h1>
         
         <div class="converter-container">
             <div class="input-area">
                 <div class="textarea-label">
-                    <label for="input-text">输入区域</label>
-                    <select id="input-format">
-                        <option value="markdown">Markdown</option>
-                        <option value="doc">DOC</option>
-                    </select>
+                    <label for="input-text">输入区域 <span id="detected-format" class="format-badge"></span></label>
                 </div>
-                <textarea id="input-text" placeholder="请在此处粘贴您的文本..."></textarea>
+                <div class="file-import-area">
+                    <label for="file-import" class="import-label">导入文件：</label>
+                    <input type="file" id="file-import" accept=".md,.doc,.docx">
+                    <span class="import-tip">(支持 .md, .doc, .docx 格式)</span>
+                </div>
+                <textarea id="input-text" placeholder="请在此处粘贴您的文本...或使用上方的导入功能"></textarea>
             </div>
             
             <div class="actions">
-                <button id="convert-btn">转换 &rarr;</button>
-                <button id="swap-btn">切换格式</button>
+                <button id="convert-btn">智能转换 &rarr;</button>
             </div>
             
             <div class="output-area">
                 <div class="textarea-label">
-                    <label for="output-text">输出区域</label>
-                    <select id="output-format">
-                        <option value="doc">DOC</option>
-                        <option value="markdown">Markdown</option>
-                    </select>
+                    <label for="output-text">输出区域 <span id="output-format" class="format-badge"></span></label>
                 </div>
                 <textarea id="output-text" placeholder="转换后的内容将显示在这里..." readonly></textarea>
                 <button id="copy-btn">复制结果</button>
@@ -43,9 +39,9 @@
         
         <div class="instructions">
             <h2>使用说明</h2>
-            <p>1. 在左侧输入区域粘贴您的Markdown或DOC文本</p>
-            <p>2. 选择对应的输入格式</p>
-            <p>3. 点击"转换"按钮生成转换后的格式</p>
+            <p>1. 在左侧输入区域粘贴您的Markdown或DOC/DOCX文本，或直接导入文件</p>
+            <p>2. 系统将自动检测您的输入格式</p>
+            <p>3. 点击"智能转换"按钮，系统将自动转换为相应的另一种格式</p>
             <p>4. 使用"复制结果"或"下载文件"获取转换后的内容</p>
         </div>
     </div>

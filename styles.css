@@ -81,8 +81,7 @@ textarea:focus {
 .actions {
     display: flex;
     justify-content: center;
-    gap: 15px;
-    margin: 10px 0;
+    margin: 20px 0;
 }
 
 button {
@@ -98,6 +97,11 @@ button {
 
 button:hover {
     background-color: #2980b9;
+}
+
+#convert-btn {
+    padding: 12px 20px;
+    font-size: 16px;
 }
 
 #copy-btn, #download-btn {
@@ -143,6 +147,60 @@ button:hover {
 
 .instructions p {
     margin-bottom: 8px;
+}
+
+.file-import-area {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+}
+
+.import-label {
+    margin-right: 10px;
+    font-weight: 500;
+}
+
+.import-tip {
+    margin-left: 10px;
+    color: #666;
+    font-size: 12px;
+}
+
+#file-import {
+    padding: 5px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.format-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 4px;
+    margin-left: 10px;
+    background-color: #f1f1f1;
+    color: #333;
+}
+
+.format-markdown {
+    background-color: #5bc0de;
+    color: #fff;
+}
+
+.format-doc {
+    background-color: #f0ad4e;
+    color: #fff;
+}
+
+.detected-format {
+    font-style: italic;
+    color: #555;
+    margin-left: 5px;
+    font-size: 14px;
+    font-weight: normal;
 }
 
 @media (min-width: 768px) {
