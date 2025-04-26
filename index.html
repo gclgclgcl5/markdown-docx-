@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown与DOC格式互转</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Markdown与DOC格式互转工具</h1>
+        
+        <div class="converter-container">
+            <div class="input-area">
+                <div class="textarea-label">
+                    <label for="input-text">输入区域</label>
+                    <select id="input-format">
+                        <option value="markdown">Markdown</option>
+                        <option value="doc">DOC</option>
+                    </select>
+                </div>
+                <textarea id="input-text" placeholder="请在此处粘贴您的文本..."></textarea>
+            </div>
+            
+            <div class="actions">
+                <button id="convert-btn">转换 &rarr;</button>
+                <button id="swap-btn">切换格式</button>
+            </div>
+            
+            <div class="output-area">
+                <div class="textarea-label">
+                    <label for="output-text">输出区域</label>
+                    <select id="output-format">
+                        <option value="doc">DOC</option>
+                        <option value="markdown">Markdown</option>
+                    </select>
+                </div>
+                <textarea id="output-text" placeholder="转换后的内容将显示在这里..." readonly></textarea>
+                <button id="copy-btn">复制结果</button>
+                <button id="download-btn">下载文件</button>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h2>使用说明</h2>
+            <p>1. 在左侧输入区域粘贴您的Markdown或DOC文本</p>
+            <p>2. 选择对应的输入格式</p>
+            <p>3. 点击"转换"按钮生成转换后的格式</p>
+            <p>4. 使用"复制结果"或"下载文件"获取转换后的内容</p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.0/mammoth.browser.min.js"></script>
+    <script src="https://unpkg.com/docx@7.8.2/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html> 
